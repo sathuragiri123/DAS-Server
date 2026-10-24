@@ -147,3 +147,110 @@ export const createDoctorAvailability = async (
         client.release();
     }
 };
+
+
+export const markDoctorAvailabilityUnavailable = async (
+    doctorId: string,
+    availabilityId: string
+) => {
+    if (!/^\d+$/.test(doctorId) || !/^\d+$/.test(availabilityId)) {
+        throw new Error("Invalid doctor or availability ID");
+    }
+
+    const client = await pool.connect();
+
+    try {
+        await client.query("BEGIN");
+
+        const availabilityResult = await client.query(
+            `SELECT id, doctor_id, status
+             FROM public.doctor_availability
+             WHERE id = $1 AND doctor_id = $2
+             FOR UPDATE`,
+            [availabilityId, doctorId]
+        );
+
+        if (availabilityResult.rows.length === 0) {
+            throw new Error("Availability not found");
+        }
+
+        if (availabilityResult.rows[0].status !== "available") {
+            throw new Error("Availability is not available");
+        }
+
+        const affectedResult = await client.query(
+            `SELECT a.id AS appointment_id,
+                    a.patient_id,
+                    a.slot_id
+             FROM public.appointments a
+             JOIN public.doctor_slots ds ON ds.id = a.slot_id
+             WHERE ds.availability_id = $1
+               AND a.status IN ('booked', 'confirmed')
+             FOR UPDATE OF a, ds`,
+            [availabilityId]
+        );
+
+        for (const appointment of affectedResult.rows) {
+            await client.query(
+                `UPDATE public.appointments
+                 SET status = 'cancelled',
+                     cancelled_by = $1,
+                     cancelled_at = NOW(),
+                     cancellation_reason = 'Doctor unavailable',
+                     updated_at = NOW()
+                 WHERE id = $2`,
+                [doctorId, appointment.appointment_id]
+            );
+
+            await client.query(
+                `UPDATE public.appointment_reminder_jobs
+                 SET status = 'cancelled',
+                     updated_at = NOW()
+                 WHERE appointment_id = $1
+                   AND status IN ('pending', 'processing')`,
+                [appointment.appointment_id]
+            );
+
+            await client.query(
+                `INSERT INTO public.notifications (
+                    user_id, appointment_id, type, title, message
+                 )
+                 VALUES ($1, $2, $3, $4, $5)`,
+                [
+                    appointment.patient_id,
+                    appointment.appointment_id,
+                    "appointment_cancelled",
+                    "Appointment Cancelled",
+                    "Your doctor is unavailable. Please book another available appointment."
+                ]
+            );
+        }
+
+        await client.query(
+            `UPDATE public.doctor_slots
+             SET status = 'blocked'
+             WHERE availability_id = $1`,
+            [availabilityId]
+        );
+
+        await client.query(
+            `UPDATE public.doctor_availability
+             SET status = 'unavailable',
+                 updated_at = NOW()
+             WHERE id = $1`,
+            [availabilityId]
+        );
+
+        await client.query("COMMIT");
+
+        return {
+            availabilityId,
+            appointmentsCancelled: affectedResult.rows.length
+        };
+    } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+    } finally {
+        client.release();
+    }
+};

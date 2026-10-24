@@ -1,6 +1,6 @@
 
 import type { Request, Response } from "express";
-import { createDoctorAvailability } from "../services/availability.service.js";
+import { createDoctorAvailability, markDoctorAvailabilityUnavailable } from "../services/availability.service.js";
 
 export const createAvailabilityController = async (
     req: Request,
@@ -39,5 +39,36 @@ export const createAvailabilityController = async (
 
         console.error("Create availability error:", error);
         res.status(500).json({ message: "Failed to create doctor availability" });
+    }
+};
+
+
+export const markDoctorAvailabilityUnavailableController = async (
+    req: Request,
+    res: Response
+) => {
+    try {
+        const doctorId = String(req.session.userId);
+        const availabilityId = String(req.params.availabilityId);
+
+        const result = await markDoctorAvailabilityUnavailable(
+            doctorId,
+            availabilityId
+        );
+
+        res.status(200).json({
+            message: "Availability marked unavailable successfully",
+            data: result
+        });
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "Internal server error";
+
+        const statusMap: Record<string, number> = {
+            "Invalid doctor or availability ID": 400,
+            "Availability not found": 404,
+            "Availability is not available": 409
+        };
+
+        res.status(statusMap[message] ?? 500).json({ message });
     }
 };
