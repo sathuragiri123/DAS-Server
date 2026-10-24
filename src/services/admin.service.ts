@@ -224,3 +224,53 @@ export const updateCommissionSettings = async (
 
     return result.rows[0];
 };
+
+export const getAdminDashboardStats = async () => {
+    const result = await pool.query(
+        `SELECT
+            (SELECT COUNT(*)
+             FROM public.users
+             WHERE role = 'patient'
+               AND is_active = TRUE) AS total_patients,
+
+            (SELECT COUNT(*)
+             FROM public.users u
+             JOIN public.doctor_profiles dp ON dp.user_id = u.id
+             WHERE u.role = 'doctor'
+               AND u.is_active = TRUE
+               AND dp.approval_status = 'approved') AS approved_doctors,
+
+            (SELECT COUNT(*)
+             FROM public.doctor_profiles dp
+             JOIN public.users u ON u.id = dp.user_id
+             WHERE u.role = 'doctor'
+               AND dp.approval_status = 'pending') AS pending_doctors,
+
+            (SELECT COUNT(*)
+             FROM public.appointments) AS total_appointments,
+
+            (SELECT COUNT(*)
+             FROM public.appointments
+             WHERE status IN ('booked', 'confirmed')) AS active_appointments,
+
+            (SELECT COUNT(*)
+             FROM public.appointments
+             WHERE status = 'completed') AS completed_appointments,
+
+            (SELECT COUNT(*)
+             FROM public.appointments
+             WHERE status = 'cancelled') AS cancelled_appointments`
+    );
+
+    const stats = result.rows[0];
+
+    return {
+        totalPatients: Number(stats.total_patients),
+        approvedDoctors: Number(stats.approved_doctors),
+        pendingDoctors: Number(stats.pending_doctors),
+        totalAppointments: Number(stats.total_appointments),
+        activeAppointments: Number(stats.active_appointments),
+        completedAppointments: Number(stats.completed_appointments),
+        cancelledAppointments: Number(stats.cancelled_appointments)
+    };
+};

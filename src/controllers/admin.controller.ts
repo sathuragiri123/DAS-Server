@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { getDoctorCertificateUrl, getPendingDoctors, reviewDoctorApplication, reviewDoctorCertificate, updateCommissionSettings } from "../services/admin.service.js";
+import { getAdminDashboardStats, getDoctorCertificateUrl, getPendingDoctors, reviewDoctorApplication, reviewDoctorCertificate, updateCommissionSettings } from "../services/admin.service.js";
 import { pool } from "../config/database.js";
 
 export const getPendingDoctorsController = async (
@@ -232,6 +232,26 @@ export const updateCommissionSettingsController = async (
 
         res.status(500).json({
             message: "Unable to update commission settings",
+        });
+    }
+};
+
+export const getAdminDashboardStatsController = async (
+    _req: Request,
+    res: Response
+): Promise<void> => {
+    try {
+        const stats = await getAdminDashboardStats();
+
+        res.status(200).json({
+            message: "Admin dashboard stats retrieved successfully",
+            data: stats
+        });
+    } catch (error) {
+        console.error("Get admin dashboard stats error:", error);
+
+        res.status(500).json({
+            message: "Unable to retrieve admin dashboard stats"
         });
     }
 };
