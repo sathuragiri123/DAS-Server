@@ -714,3 +714,87 @@ export const confirmAppointmentReschedule = async (
         client.release();
     }
 };
+
+
+export const getDoctorDashboardStats = async (doctorId: string) => {
+    if (!/^\d+$/.test(doctorId)) {
+        throw new Error("Invalid doctor ID");
+    }
+
+    const result = await pool.query(
+        `SELECT
+            COUNT(*) AS total_appointments,
+
+            COUNT(*) FILTER (
+                WHERE a.status IN ('booked', 'confirmed')
+                  AND ds.start_time > NOW()
+            ) AS upcoming_appointments,
+
+            COUNT(*) FILTER (
+                WHERE a.status = 'completed'
+            ) AS completed_appointments,
+
+            COUNT(*) FILTER (
+                WHERE a.status = 'cancelled'
+            ) AS cancelled_appointments,
+
+            COUNT(*) FILTER (
+                WHERE a.status = 'no_show'
+            ) AS no_show_appointments
+
+         FROM public.appointments a
+         JOIN public.doctor_slots ds
+           ON ds.id = a.slot_id
+         WHERE a.doctor_id = $1`,
+        [doctorId]
+    );
+
+    const stats = result.rows[0];
+
+    return {
+        totalAppointments: Number(stats.total_appointments),
+        upcomingAppointments: Number(stats.upcoming_appointments),
+        completedAppointments: Number(stats.completed_appointments),
+        cancelledAppointments: Number(stats.cancelled_appointments),
+        noShowAppointments: Number(stats.no_show_appointments)
+    };
+};
+
+export const getPatientDashboardStats = async (patientId: string) => {
+    if (!/^\d+$/.test(patientId)) {
+        throw new Error("Invalid patient ID");
+    }
+
+    const result = await pool.query(
+        `SELECT
+            COUNT(*) AS total_appointments,
+
+            COUNT(*) FILTER (
+                WHERE a.status IN ('booked', 'confirmed')
+                  AND ds.start_time > NOW()
+            ) AS upcoming_appointments,
+
+            COUNT(*) FILTER (
+                WHERE a.status = 'completed'
+            ) AS completed_appointments,
+
+            COUNT(*) FILTER (
+                WHERE a.status = 'cancelled'
+            ) AS cancelled_appointments
+
+         FROM public.appointments a
+         JOIN public.doctor_slots ds
+           ON ds.id = a.slot_id
+         WHERE a.patient_id = $1`,
+        [patientId]
+    );
+
+    const stats = result.rows[0];
+
+    return {
+        totalAppointments: Number(stats.total_appointments),
+        upcomingAppointments: Number(stats.upcoming_appointments),
+        completedAppointments: Number(stats.completed_appointments),
+        cancelledAppointments: Number(stats.cancelled_appointments)
+    };
+};

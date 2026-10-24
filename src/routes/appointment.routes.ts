@@ -1,6 +1,6 @@
 
 import { Router } from "express";
-import { bookAppointmentController, completeAppointmentController, confirmAppointmentRescheduleController, getDoctorAppointmentsController, getPatientAppointmentsController, requestAppointmentRescheduleController } from "../controllers/appointment.controller.js";
+import { bookAppointmentController, completeAppointmentController, confirmAppointmentRescheduleController, getDoctorAppointmentsController, getDoctorDashboardStatsController, getPatientAppointmentsController, getPatientDashboardStatsController, requestAppointmentRescheduleController } from "../controllers/appointment.controller.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
 import { requireRole } from "../middleware/role.middleware.js";
 import { createPrescriptionController, getPatientPrescriptionsController } from "../controllers/prescription.controller.js";
@@ -15,6 +15,7 @@ router.post("/:appointmentId/prescriptions", requireAuth, requireRole("doctor"),
 router.get("/my/prescriptions", requireAuth, requireRole("patient"), getPatientPrescriptionsController);
 router.post("/:appointmentId/reschedule-requests", requireAuth, requireRole("patient"), requestAppointmentRescheduleController);
 router.patch("/:appointmentId/reschedule-requests/:requestId/confirm", requireAuth, requireRole("patient"), confirmAppointmentRescheduleController);
-
+router.get("/doctor/dashboard/stats", requireAuth, requireRole("doctor"), getDoctorDashboardStatsController);
+router.get("/my/dashboard/stats", requireAuth, requireRole("patient"), getPatientDashboardStatsController);
 
 export default router;

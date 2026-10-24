@@ -1,6 +1,7 @@
 
 import type { Request, Response } from "express";
-import { bookAppointment, completeAppointment, confirmAppointmentReschedule, getDoctorAppointments, requestAppointmentReschedule } from "../services/appointment.service.js";
+import { bookAppointment, completeAppointment, confirmAppointmentReschedule, getDoctorAppointments, getDoctorDashboardStats, getPatientDashboardStats, requestAppointmentReschedule } from "../services/appointment.service.js";
+import { getPatientAppointments } from "../services/appointment.service.js";
 
 export const bookAppointmentController = async (
     req: Request,
@@ -64,9 +65,6 @@ export const bookAppointmentController = async (
         });
     }
 };
-
-
-import { getPatientAppointments } from "../services/appointment.service.js";
 
 export const getPatientAppointmentsController = async (
     req: Request,
@@ -283,5 +281,56 @@ export const confirmAppointmentRescheduleController = async (
         };
 
         res.status(statusMap[message] ?? 500).json({ message });
+    }
+};
+
+export const getDoctorDashboardStatsController = async (
+    req: Request,
+    res: Response
+): Promise<void> => {
+    try {
+        const doctorId = String(req.session.userId);
+
+        const stats = await getDoctorDashboardStats(doctorId);
+
+        res.status(200).json({
+            message: "Doctor dashboard stats retrieved successfully",
+            data: stats
+        });
+    } catch (error) {
+        console.error("Get doctor dashboard stats error:", error);
+
+        res.status(500).json({
+            message: "Unable to retrieve doctor dashboard stats"
+        });
+    }
+};
+
+export const getPatientDashboardStatsController = async (
+    req: Request,
+    res: Response
+): Promise<void> => {
+    try {
+        const patientId = String(req.session.userId);
+
+        const stats = await getPatientDashboardStats(patientId);
+
+        res.status(200).json({
+            message: "Patient dashboard stats retrieved successfully",
+            data: stats
+        });
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "Internal server error";
+
+        if (message === "Invalid patient ID") {
+            res.status(400).json({ message });
+            return;
+        }
+
+        console.error("Get patient dashboard stats error:", error);
+
+        res.status(500).json({
+            message: "Unable to retrieve patient dashboard stats"
+        });
     }
 };
