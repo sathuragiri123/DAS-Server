@@ -1,6 +1,6 @@
 
 import type { Request, Response } from "express";
-import { bookAppointment, completeAppointment, getDoctorAppointments } from "../services/appointment.service.js";
+import { bookAppointment, completeAppointment, confirmAppointmentReschedule, getDoctorAppointments, requestAppointmentReschedule } from "../services/appointment.service.js";
 
 export const bookAppointmentController = async (
     req: Request,
@@ -126,7 +126,6 @@ export const getDoctorAppointmentsController = async (
     }
 };
 
-
 export const completeAppointmentController = async (
     req: Request,
     res: Response
@@ -177,5 +176,112 @@ export const completeAppointmentController = async (
         res.status(500).json({
             message: "Failed to complete appointment",
         });
+    }
+};
+
+export const requestAppointmentRescheduleController = async (
+    req: Request,
+    res: Response
+) => {
+    try {
+        const patientId = String(req.session.userId);
+        const appointmentId = String(req.params.appointmentId);
+        const { proposedSlotId } = req.body;
+
+        if (typeof proposedSlotId !== "string" && typeof proposedSlotId !== "number") {
+            res.status(400).json({
+                message: "A valid proposedSlotId is required",
+            });
+            return;
+        }
+
+        const request = await requestAppointmentReschedule(
+            patientId,
+            appointmentId,
+            String(proposedSlotId)
+        );
+
+        res.status(201).json({
+            message: "Reschedule request created successfully",
+            data: request,
+        });
+    } catch (error) {
+        if (error instanceof Error) {
+            if (error.message === "Invalid patient, appointment, or slot ID") {
+                res.status(400).json({ message: error.message });
+                return;
+            }
+
+            if (error.message === "Appointment not found") {
+                res.status(404).json({ message: error.message });
+                return;
+            }
+
+            if (error.message === "Appointment does not belong to this patient") {
+                res.status(403).json({ message: "Access denied" });
+                return;
+            }
+
+            if (error.message === "Appointments cannot be rescheduled within 24 hours") {
+                res.status(409).json({ message: error.message });
+                return;
+            }
+
+            if (error.message === "Appointment cannot be rescheduled from its current status" || error.message === "Rescheduling must use the same doctor" || error.message === "Proposed slot is not available" || error.message === "A reschedule request is already pending") {
+                res.status(409).json({ message: error.message });
+                return;
+            }
+
+            if (error.message === "Proposed slot not found") {
+                res.status(404).json({ message: error.message });
+                return;
+            }
+        }
+
+        console.error("Request appointment reschedule error:", error);
+
+        res.status(500).json({
+            message: "Failed to create reschedule request",
+        });
+    }
+};
+
+
+export const confirmAppointmentRescheduleController = async (
+    req: Request,
+    res: Response
+) => {
+    try {
+        const patientId = String(req.session.userId);
+        const appointmentId = String(req.params.appointmentId);
+        const requestId = String(req.params.requestId);
+
+        const appointment = await confirmAppointmentReschedule(
+            patientId,
+            appointmentId,
+            requestId
+        );
+
+        res.status(200).json({
+            message: "Appointment rescheduled successfully",
+            data: appointment
+        });
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "Internal server error";
+
+        const statusMap: Record<string, number> = {
+            "Invalid patient, appointment, or request ID": 400,
+            "Reschedule request not found": 404,
+            "Proposed slot not found": 404,
+            "Appointment does not belong to this patient": 403,
+            "Reschedule request is not pending": 409,
+            "Appointment cannot be rescheduled from its current status": 409,
+            "Appointments cannot be rescheduled within 24 hours": 409,
+            "Rescheduling must use the same doctor": 409,
+            "Proposed slot is not available": 409,
+            "Proposed slot is already booked": 409
+        };
+
+        res.status(statusMap[message] ?? 500).json({ message });
     }
 };
