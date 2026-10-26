@@ -34,16 +34,17 @@ export const getAvailableDoctorSlots = async (
        ds.start_time,
        ds.end_time,
        CASE
-         WHEN da.status <> 'available' THEN 'unavailable'
-         WHEN ds.status <> 'available' THEN 'booked'
-         WHEN EXISTS (
-           SELECT 1
-           FROM public.appointments a
-           WHERE a.slot_id = ds.id
-             AND a.status = 'booked'
-         ) THEN 'booked'
-         ELSE 'available'
-       END AS slot_status
+    WHEN da.status <> 'available' THEN 'unavailable'
+    WHEN ds.start_time <= NOW() THEN 'unavailable'
+    WHEN ds.status <> 'available' THEN 'booked'
+    WHEN EXISTS (
+        SELECT 1
+        FROM public.appointments a
+        WHERE a.slot_id = ds.id
+          AND a.status = 'booked'
+    ) THEN 'booked'
+    ELSE 'available'
+    END AS slot_status
      FROM public.doctor_slots ds
      JOIN public.doctor_availability da
        ON da.id = ds.availability_id

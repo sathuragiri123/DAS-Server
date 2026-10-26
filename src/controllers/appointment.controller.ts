@@ -1,6 +1,6 @@
 
 import type { Request, Response } from "express";
-import { bookAppointment, completeAppointment, confirmAppointmentReschedule, getDoctorAppointments, getDoctorDashboardStats, getPatientDashboardStats, requestAppointmentReschedule } from "../services/appointment.service.js";
+import { bookAppointment, cancelAppointment, completeAppointment, confirmAppointmentReschedule, getDoctorAppointments, getDoctorDashboardStats, getPatientDashboardStats, requestAppointmentReschedule } from "../services/appointment.service.js";
 import { getPatientAppointments } from "../services/appointment.service.js";
 
 export const bookAppointmentController = async (
@@ -331,6 +331,51 @@ export const getPatientDashboardStatsController = async (
 
         res.status(500).json({
             message: "Unable to retrieve patient dashboard stats"
+        });
+    }
+};
+
+
+export const cancelAppointmentController = async (
+    req: Request,
+    res: Response
+) => {
+    try {
+        const doctorId = String(req.session.userId);
+        const appointmentId = String(req.params.appointmentId);
+
+        const appointment = await cancelAppointment(
+            doctorId,
+            appointmentId
+        );
+
+        res.status(200).json({
+            message: "Appointment cancelled successfully",
+            data: appointment,
+        });
+    } catch (error) {
+        const message =
+            error instanceof Error
+                ? error.message
+                : "Internal server error";
+
+        const statusMap: Record<string, number> = {
+            "Invalid doctor or appointment ID": 400,
+            "Appointment not found": 404,
+            "Appointment does not belong to this doctor": 403,
+            "Appointments cannot be cancelled within 3 hours": 409,
+            "Appointment cannot be cancelled from its current status": 409,
+        };
+
+        if (statusMap[message]) {
+            res.status(statusMap[message]).json({ message });
+            return;
+        }
+
+        console.error("Cancel appointment error:", error);
+
+        res.status(500).json({
+            message: "Failed to cancel appointment",
         });
     }
 };

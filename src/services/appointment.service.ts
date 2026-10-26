@@ -311,9 +311,9 @@ export const completeAppointment = async (
      WHERE a.id = $1
        AND a.doctor_id = $2
        AND a.slot_id = ds.id
-       AND ds.end_time <= NOW()
+       AND ds.start_time <= NOW()
        AND a.status IN ('booked', 'confirmed')
-     RETURNING a.id, a.patient_id, a.doctor_id, a.status`,
+     RETURNING a.id, a.patient_id, a.doctor_id, a.status, ds.start_time`,
         [appointmentId, doctorId]
     );
 
@@ -321,7 +321,7 @@ export const completeAppointment = async (
     if (result.rows.length === 0) {
 
         const existing = await pool.query(
-            `SELECT a.id, a.doctor_id, a.status, ds.end_time
+            `SELECT a.id, a.doctor_id, a.status, ds.start_time
      FROM public.appointments AS a
      JOIN public.doctor_slots AS ds ON ds.id = a.slot_id
      WHERE a.id = $1`,
@@ -337,12 +337,8 @@ export const completeAppointment = async (
             throw new Error("Appointment does not belong to this doctor");
         }
 
-        if (
-            new Date(existing.rows[0].end_time).getTime() > Date.now()
-        ) {
-            throw new Error(
-                "Appointment cannot be completed before its scheduled end time"
-            );
+        if (new Date(existing.rows[0].start_time).getTime() > Date.now()) {
+            throw new Error("Appointment cannot be completed before its scheduled start time");
         }
 
         throw new Error(
@@ -375,6 +371,148 @@ export const completeAppointment = async (
     };
 };
 
+
+export const cancelAppointment = async (
+    doctorId: string,
+    appointmentId: string
+) => {
+    if (!/^\d+$/.test(doctorId) || !/^\d+$/.test(appointmentId)) {
+        throw new Error("Invalid doctor or appointment ID");
+    }
+
+    const client = await pool.connect();
+    let appointment: {
+        id: string;
+        patient_id: string;
+        doctor_id: string;
+        slot_id: string;
+        start_time: string;
+    };
+
+    try {
+        await client.query("BEGIN");
+
+        const result = await client.query(
+            `SELECT
+                a.id,
+                a.patient_id,
+                a.doctor_id,
+                a.slot_id,
+                a.status,
+                ds.start_time,
+                da.status AS availability_status
+             FROM public.appointments a
+             JOIN public.doctor_slots ds ON ds.id = a.slot_id
+             JOIN public.doctor_availability da
+               ON da.id = ds.availability_id
+             WHERE a.id = $1
+             FOR UPDATE OF a, ds, da`,
+            [appointmentId]
+        );
+
+        if (result.rows.length === 0) {
+            throw new Error("Appointment not found");
+        }
+
+        const existing = result.rows[0];
+
+        if (String(existing.doctor_id) !== doctorId) {
+            throw new Error("Appointment does not belong to this doctor");
+        }
+
+        if (!["booked", "confirmed"].includes(existing.status)) {
+            throw new Error(
+                "Appointment cannot be cancelled from its current status"
+            );
+        }
+
+        const startTime = new Date(existing.start_time).getTime();
+
+        const cancellationDeadline = 3 * 60 * 60 * 1000;
+
+        if (startTime - Date.now() < cancellationDeadline) {
+            throw new Error("Appointments cannot be cancelled within 3 hours");
+        }
+
+        const updated = await client.query(
+            `UPDATE public.appointments
+             SET status = 'cancelled',
+                 cancelled_by = $1,
+                 cancelled_at = NOW(),
+                 cancellation_reason = 'Cancelled by doctor',
+                 updated_at = NOW()
+             WHERE id = $2
+               AND doctor_id = $1
+               AND status IN ('booked', 'confirmed')
+             RETURNING id, patient_id, doctor_id, slot_id`,
+            [doctorId, appointmentId]
+        );
+
+        if (updated.rows.length === 0) {
+            throw new Error(
+                "Appointment cannot be cancelled from its current status"
+            );
+        }
+
+        await client.query(
+            `UPDATE public.doctor_slots ds
+             SET status = CASE
+                 WHEN da.status = 'available' THEN 'available'
+                 ELSE ds.status
+             END
+             FROM public.doctor_availability da
+             WHERE ds.id = $1
+               AND ds.availability_id = da.id`,
+            [existing.slot_id]
+        );
+
+        await client.query(
+            `UPDATE public.appointment_reminder_jobs
+             SET status = 'cancelled',
+                 updated_at = NOW()
+             WHERE appointment_id = $1
+               AND status = 'pending'`,
+            [appointmentId]
+        );
+
+        await client.query("COMMIT");
+
+        appointment = {
+            ...updated.rows[0],
+            start_time: existing.start_time,
+        };
+    } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+    } finally {
+        client.release();
+    }
+
+    try {
+        await createNotification({
+            userId: String(appointment.patient_id),
+            appointmentId: String(appointment.id),
+            type: "appointment_cancelled",
+            title: "Appointment Cancelled",
+            message: "Your doctor has cancelled this appointment.",
+        });
+    } catch (error) {
+        console.error(
+            "Failed to create appointment cancellation notification:",
+            error
+        );
+    }
+
+    return {
+        appointmentId: String(appointment.id),
+        patientId: String(appointment.patient_id),
+        doctorId: String(appointment.doctor_id),
+        slotId: String(appointment.slot_id),
+        status: "cancelled",
+    };
+};
+
+
 export const getDoctorAppointments = async (doctorId: string) => {
     if (!/^\d+$/.test(doctorId)) {
         throw new Error("Invalid doctor ID");
@@ -388,7 +526,7 @@ export const getDoctorAppointments = async (doctorId: string) => {
        a.slot_id,
        ds.start_time,
        ds.end_time,
-       da.availability_date,
+       TO_CHAR(da.availability_date, 'YYYY-MM-DD') AS availability_date,
        a.doctor_fee,
        a.commission_fee,
        a.total_fee,

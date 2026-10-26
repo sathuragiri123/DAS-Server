@@ -62,7 +62,7 @@ export const createPrescriptionController = async (
                 return;
             }
 
-            if (error.message === "Prescription can only be added to a completed appointment") {
+            if (error.message === "Prescription cannot be added to this appointment status" || error.message === "A prescription already exists for this appointment" || error.message === "Appointment could not be marked as completed") {
                 res.status(409).json({ message: error.message });
                 return;
             }

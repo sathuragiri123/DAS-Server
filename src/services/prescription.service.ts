@@ -1,5 +1,6 @@
 
 import { pool } from "../config/database.js";
+import { createNotification } from "./notification.service.js";
 
 type CreatePrescriptionInput = {
     appointmentId: string;
@@ -9,10 +10,18 @@ type CreatePrescriptionInput = {
     instructions?: string | null;
 };
 
+
+
 export const createPrescription = async (
     input: CreatePrescriptionInput
 ) => {
-    const { appointmentId, doctorId, diagnosis, medicines, instructions, } = input;
+    const {
+        appointmentId,
+        doctorId,
+        diagnosis,
+        medicines,
+        instructions,
+    } = input;
 
     if (!/^\d+$/.test(appointmentId) || !/^\d+$/.test(doctorId)) {
         throw new Error("Invalid appointment or doctor ID");
@@ -22,72 +31,119 @@ export const createPrescription = async (
         throw new Error("Medicines are required");
     }
 
-    const appointmentResult = await pool.query(
-        `SELECT id, patient_id, doctor_id, status
-         FROM public.appointments
-         WHERE id = $1`,
-        [appointmentId]
-    );
+    const client = await pool.connect();
 
-    if (appointmentResult.rows.length === 0) {
-        throw new Error("Appointment not found");
-    }
+    try {
+        await client.query("BEGIN");
 
-    const appointment = appointmentResult.rows[0];
-
-    if (String(appointment.doctor_id) !== doctorId) {
-        throw new Error("Appointment does not belong to this doctor");
-    }
-
-    if (appointment.status !== "completed") {
-        throw new Error(
-            "Prescription can only be added to a completed appointment"
+        const appointmentResult = await client.query(
+            `SELECT id, patient_id, doctor_id, status
+             FROM public.appointments
+             WHERE id = $1
+             FOR UPDATE`,
+            [appointmentId]
         );
+
+        if (appointmentResult.rows.length === 0) {
+            throw new Error("Appointment not found");
+        }
+
+        const appointment = appointmentResult.rows[0];
+
+        if (String(appointment.doctor_id) !== doctorId) {
+            throw new Error("Appointment does not belong to this doctor");
+        }
+
+        if (!["booked", "confirmed"].includes(appointment.status)) {
+            throw new Error(
+                "Prescription cannot be added to this appointment status"
+            );
+        }
+
+        const existingPrescription = await client.query(
+            `SELECT id
+             FROM public.prescriptions
+             WHERE appointment_id = $1`,
+            [appointmentId]
+        );
+
+        if (existingPrescription.rows.length > 0) {
+            throw new Error(
+                "A prescription already exists for this appointment"
+            );
+        }
+
+        const result = await client.query(
+            `INSERT INTO public.prescriptions (
+                appointment_id,
+                patient_id,
+                doctor_id,
+                diagnosis,
+                medicines,
+                instructions
+             )
+             VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING
+                id,
+                appointment_id,
+                patient_id,
+                doctor_id,
+                diagnosis,
+                medicines,
+                instructions,
+                created_at,
+                updated_at`,
+            [
+                appointmentId,
+                appointment.patient_id,
+                doctorId,
+                diagnosis?.trim() || null,
+                medicines.trim(),
+                instructions?.trim() || null,
+            ]
+        );
+
+        const completedAppointment = await client.query(
+            `UPDATE public.appointments
+             SET status = 'completed',
+                 updated_at = NOW()
+             WHERE id = $1
+               AND doctor_id = $2
+               AND status IN ('booked', 'confirmed')
+             RETURNING id`,
+            [appointmentId, doctorId]
+        );
+
+        if (completedAppointment.rows.length === 0) {
+            throw new Error(
+                "Appointment could not be marked as completed"
+            );
+        }
+
+        await client.query("COMMIT");
+
+        try {
+            await createNotification({
+                userId: String(appointment.patient_id),
+                appointmentId: String(appointment.id),
+                type: "appointment_completed",
+                title: "Appointment Completed",
+                message: "Your doctor has marked the appointment as completed.",
+            });
+        } catch (error) {
+            console.error("Failed to create appointment completion notification:", error);
+        }
+
+        return result.rows[0];
+    } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+    } finally {
+        client.release();
     }
-
-    const existingPrescription = await pool.query(
-        `SELECT id
-         FROM public.prescriptions
-         WHERE appointment_id = $1`,
-        [appointmentId]
-    );
-
-    if (existingPrescription.rows.length > 0) {
-        throw new Error("A prescription already exists for this appointment");
-    }
-
-    const result = await pool.query(
-        `INSERT INTO public.prescriptions (
-            appointment_id,
-            patient_id,
-            doctor_id,
-            diagnosis,
-            medicines,
-            instructions
-         )
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING
-            id,
-            appointment_id,
-            patient_id,
-            doctor_id,
-            diagnosis,
-            medicines,
-            instructions,
-            created_at,
-            updated_at`,
-        [
-            appointmentId,
-            appointment.patient_id,
-            doctorId,
-            diagnosis?.trim() || null,
-            medicines.trim(),
-            instructions?.trim() || null,
-        ]
-    );
-
-    return result.rows[0];
 };
+
+
 
 
 export const getPatientPrescriptions = async (patientId: string) => {
