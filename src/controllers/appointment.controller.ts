@@ -1,6 +1,6 @@
 
 import type { Request, Response } from "express";
-import { bookAppointment, cancelAppointment, completeAppointment, confirmAppointmentReschedule, getAdminAppointments, getDoctorAppointments, getDoctorDashboardStats, getPatientDashboardStats, requestAppointmentReschedule } from "../services/appointment.service.js";
+import { bookAppointment, cancelAppointment, completeAppointment, confirmAppointment, confirmAppointmentReschedule, getAdminAppointments, getDoctorAppointments, getDoctorDashboardStats, getPatientDashboardStats, requestAppointmentReschedule } from "../services/appointment.service.js";
 import { getPatientAppointments } from "../services/appointment.service.js";
 
 export const bookAppointmentController = async (
@@ -56,6 +56,16 @@ export const bookAppointmentController = async (
 
         if (message === "Invalid fee or commission settings") {
             res.status(500).json({ message });
+            return;
+        }
+
+        if (
+            message === "Slot is not available" ||
+            message === "Slot is already booked" ||
+            message === "Cannot book a slot in the past" ||
+            message === "You can book only one appointment per day"
+        ) {
+            res.status(409).json({ message });
             return;
         }
 
@@ -397,5 +407,51 @@ export const getAdminAppointmentsController = async (
         res.status(500).json({
             message: "Failed to retrieve appointments",
         });
+    }
+};
+
+export const confirmAppointmentController = async (
+    req: Request,
+    res: Response
+) => {
+    try {
+        const doctorId = String(req.session.userId ?? "");
+        const appointmentId = String(req.params.appointmentId ?? "");
+        
+        if (!/^\d+$/.test(appointmentId)) {
+            res.status(400).json({
+                message: "Invalid appointment ID",
+            });
+            return;
+        }
+
+        const result = await confirmAppointment(
+            doctorId,
+            appointmentId
+        );
+
+        res.status(200).json({
+            message: "Appointment confirmed successfully",
+            data: result,
+        });
+    } catch (error) {
+        const message =
+            error instanceof Error
+                ? error.message
+                : "Failed to confirm appointment";
+
+        const statusCode =
+            message === "Invalid doctor or appointment ID"
+                ? 400
+                : message === "Appointment not found"
+                    ? 404
+                    : message === "Appointment does not belong to this doctor"
+                        ? 403
+                        : message ===
+                            "Appointment cannot be confirmed from its current status"
+                            ? 409
+                            : 500;
+
+        res.status(statusCode).json({ message });
     }
 };

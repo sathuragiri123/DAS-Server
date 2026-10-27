@@ -246,6 +246,18 @@ export const markDoctorAvailabilityUnavailable = async (
         );
 
         for (const appointment of affectedResult.rows) {
+
+            await client.query(
+                `INSERT INTO public.doctor_unavailability_followups 
+                (doctor_id, appointment_id, patient_id )
+                VALUES ($1, $2, $3)`,
+                [
+                    doctorId,
+                    appointment.appointment_id,
+                    appointment.patient_id
+                ]
+            );
+
             await client.query(
                 `UPDATE public.appointments
                  SET status = 'cancelled',

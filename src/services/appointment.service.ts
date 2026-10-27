@@ -134,6 +134,31 @@ export const bookAppointment = async ({
             throw new Error("Slot is already booked");
         }
 
+        const existingPatientAppointment = await client.query(
+            `SELECT a.id
+     FROM public.appointments a
+     JOIN public.doctor_slots existing_slot
+       ON existing_slot.id = a.slot_id
+     JOIN public.doctor_availability existing_availability
+       ON existing_availability.id = existing_slot.availability_id
+     JOIN public.doctor_slots selected_slot
+       ON selected_slot.id = $2
+     JOIN public.doctor_availability selected_availability
+       ON selected_availability.id = selected_slot.availability_id
+     WHERE a.patient_id = $1
+       AND existing_availability.availability_date =
+           selected_availability.availability_date
+       AND a.status IN ('booked', 'confirmed')
+     LIMIT 1`,
+            [patientId, slotId]
+        );
+
+        if (existingPatientAppointment.rows.length > 0) {
+            throw new Error(
+                "You can book only one appointment per day"
+            );
+        }
+
         const feeResult = await client.query(
             `SELECT
          dp.consultation_fee,
@@ -216,8 +241,8 @@ export const bookAppointment = async ({
                 userId: String(patientId),
                 appointmentId: String(bookedAppointment.id),
                 type: "appointment_booked",
-                title: "Appointment Confirmed",
-                message: "Your doctor appointment has been booked successfully.",
+                title: "Booking Request Received",
+                message: "Your appointment booking request has been received. Please wait for your doctor to confirm it.",
             });
         } catch (error) {
             console.error("Failed to create booking notification:", error);
@@ -237,6 +262,99 @@ export const bookAppointment = async ({
     }
 };
 
+
+export const confirmAppointment = async (
+    doctorId: string,
+    appointmentId: string
+) => {
+    if (
+        !/^\d+$/.test(doctorId) ||
+        !/^\d+$/.test(appointmentId)
+    ) {
+        throw new Error("Invalid doctor or appointment ID");
+    }
+
+    const client = await pool.connect();
+
+    try {
+        await client.query("BEGIN");
+
+        const result = await client.query(
+            `SELECT id, patient_id, doctor_id, status
+             FROM public.appointments
+             WHERE id = $1
+             FOR UPDATE`,
+            [appointmentId]
+        );
+
+        if (result.rows.length === 0) {
+            throw new Error("Appointment not found");
+        }
+
+        const appointment = result.rows[0];
+
+        if (String(appointment.doctor_id) !== doctorId) {
+            throw new Error(
+                "Appointment does not belong to this doctor"
+            );
+        }
+
+        if (appointment.status !== "booked") {
+            throw new Error(
+                "Appointment cannot be confirmed from its current status"
+            );
+        }
+
+        const updatedResult = await client.query(
+            `UPDATE public.appointments
+             SET status = 'confirmed',
+                 updated_at = NOW()
+             WHERE id = $1
+               AND doctor_id = $2
+               AND status = 'booked'
+             RETURNING id, patient_id, doctor_id, status`,
+            [appointmentId, doctorId]
+        );
+
+        if (updatedResult.rows.length === 0) {
+            throw new Error(
+                "Appointment cannot be confirmed from its current status"
+            );
+        }
+
+        await client.query("COMMIT");
+
+        const confirmed = updatedResult.rows[0];
+
+        try {
+            await createNotification({
+                userId: String(confirmed.patient_id),
+                appointmentId: String(confirmed.id),
+                type: "appointment_confirmed",
+                title: "Appointment Confirmed",
+                message:
+                    "Your doctor has confirmed your appointment. You can plan your hospital visit for the scheduled date and time.",
+            });
+        } catch (error) {
+            console.error(
+                "Failed to create appointment confirmation notification:",
+                error
+            );
+        }
+
+        return {
+            appointmentId: String(confirmed.id),
+            patientId: String(confirmed.patient_id),
+            doctorId: String(confirmed.doctor_id),
+            status: confirmed.status,
+        };
+    } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+    } finally {
+        client.release();
+    }
+};
 
 
 export const getPatientAppointments = async (patientId: string) => {
