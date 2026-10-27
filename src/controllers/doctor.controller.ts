@@ -1,7 +1,8 @@
 
 import type { Request, Response } from "express";
-import { registerDoctor } from "../services/doctor.service.js";
+import { getAdminUserIds, registerDoctor } from "../services/doctor.service.js";
 import { uploadDoctorCertificate, deleteDoctorCertificate, } from "../services/certificateStorage.service.js";
+import { createNotification } from "../services/notification.service.js";
 
 export const registerDoctorController = async (
     req: Request,
@@ -56,6 +57,19 @@ export const registerDoctorController = async (
             certificateSpecialization,
             certificatePath: uploadedPath,
         });
+
+        const adminIds = await getAdminUserIds();
+
+        await Promise.all(
+            adminIds.map((adminId) =>
+                createNotification({
+                    userId: adminId,
+                    type: "doctor_registration",
+                    title: "New doctor registration",
+                    message: `${user.name} has registered and is awaiting admin approval.`,
+                })
+            )
+        );
 
         res.status(201).json({
             message: "Doctor registered successfully. Awaiting admin approval.",

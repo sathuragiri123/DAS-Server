@@ -144,3 +144,39 @@ export const markNotificationAsRead = async (
         readAt: result.rows[0].read_at,
     };
 };
+
+
+export const getAdminNotifications = async (adminId: string) => {
+    if (!/^\d+$/.test(adminId)) {
+        throw new Error("Invalid admin ID");
+    }
+
+    const result = await pool.query(
+        `SELECT
+            id,
+            appointment_id,
+            type,
+            title,
+            message,
+            is_read,
+            read_at,
+            created_at
+         FROM public.notifications
+         WHERE user_id = $1
+         ORDER BY created_at DESC`,
+        [adminId]
+    );
+
+    return result.rows.map((notification) => ({
+        id: String(notification.id),
+        appointmentId: notification.appointment_id
+            ? String(notification.appointment_id)
+            : null,
+        type: notification.type,
+        title: notification.title,
+        message: notification.message,
+        isRead: notification.is_read,
+        readAt: notification.read_at,
+        createdAt: notification.created_at,
+    }));
+};

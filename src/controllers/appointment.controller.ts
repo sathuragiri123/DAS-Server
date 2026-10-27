@@ -1,6 +1,6 @@
 
 import type { Request, Response } from "express";
-import { bookAppointment, cancelAppointment, completeAppointment, confirmAppointmentReschedule, getDoctorAppointments, getDoctorDashboardStats, getPatientDashboardStats, requestAppointmentReschedule } from "../services/appointment.service.js";
+import { bookAppointment, cancelAppointment, completeAppointment, confirmAppointmentReschedule, getAdminAppointments, getDoctorAppointments, getDoctorDashboardStats, getPatientDashboardStats, requestAppointmentReschedule } from "../services/appointment.service.js";
 import { getPatientAppointments } from "../services/appointment.service.js";
 
 export const bookAppointmentController = async (
@@ -376,6 +376,26 @@ export const cancelAppointmentController = async (
 
         res.status(500).json({
             message: "Failed to cancel appointment",
+        });
+    }
+};
+
+export const getAdminAppointmentsController = async (
+    req: Request,
+    res: Response
+) => {
+    try {
+        const appointments = await getAdminAppointments();
+
+        res.status(200).json({
+            message: "Admin appointments retrieved successfully",
+            data: appointments,
+        });
+    } catch (error) {
+        console.error("Get admin appointments error:", error);
+
+        res.status(500).json({
+            message: "Failed to retrieve appointments",
         });
     }
 };

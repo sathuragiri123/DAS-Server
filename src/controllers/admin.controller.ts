@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
-import { getAdminDashboardStats, getDoctorCertificateUrl, getPendingDoctors, reviewDoctorApplication, reviewDoctorCertificate, updateCommissionSettings } from "../services/admin.service.js";
+import { getAdminDashboardStats, getAdminPatients, getCommissionSettings, getDoctorCertificateUrl, getPendingDoctors, reviewDoctorApplication, reviewDoctorCertificate, updateCommissionSettings } from "../services/admin.service.js";
 import { pool } from "../config/database.js";
+import { createNotification } from "../services/notification.service.js";
 
 export const getPendingDoctorsController = async (
     _req: Request,
@@ -103,6 +104,26 @@ export const reviewDoctorApplicationController = async (
             decision,
             adminId
         );
+
+        try {
+            await createNotification({
+                userId: doctorId,
+                type: "doctor_application_review",
+                title:
+                    decision === "approved"
+                        ? "Doctor application approved"
+                        : "Doctor application rejected",
+                message:
+                    decision === "approved"
+                        ? "Congratulations! Your doctor application has been approved. You can now access doctor features."
+                        : "Your doctor application has been rejected. Please contact the administrator for more information.",
+            });
+        } catch (notificationError) {
+            console.error(
+                "Failed to create doctor review notification:",
+                notificationError
+            );
+        }
 
         res.status(200).json({
             message: `Doctor application ${decision} successfully`,
@@ -252,6 +273,55 @@ export const getAdminDashboardStatsController = async (
 
         res.status(500).json({
             message: "Unable to retrieve admin dashboard stats"
+        });
+    }
+};
+
+
+export const getAdminPatientsController = async (
+    req: Request,
+    res: Response
+) => {
+    try {
+        const patients = await getAdminPatients();
+
+        res.status(200).json({
+            message: "Patients retrieved successfully",
+            data: patients,
+        });
+    } catch (error) {
+        console.error("Get admin patients error:", error);
+
+        res.status(500).json({
+            message: "Unable to retrieve patients",
+        });
+    }
+};
+
+export const getCommissionSettingsController = async (
+    req: Request,
+    res: Response
+): Promise<void> => {
+    try {
+        const settings = await getCommissionSettings();
+
+        res.status(200).json({
+            message: "Commission settings retrieved successfully",
+            data: settings,
+        });
+    } catch (error) {
+        if (
+            error instanceof Error &&
+            error.message === "Commission settings not found"
+        ) {
+            res.status(503).json({ message: error.message });
+            return;
+        }
+
+        console.error("Get commission settings error:", error);
+
+        res.status(500).json({
+            message: "Unable to retrieve commission settings",
         });
     }
 };

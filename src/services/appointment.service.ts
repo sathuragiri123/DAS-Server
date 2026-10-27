@@ -936,3 +936,56 @@ export const getPatientDashboardStats = async (patientId: string) => {
         cancelledAppointments: Number(stats.cancelled_appointments)
     };
 };
+
+export const getAdminAppointments = async () => {
+    const result = await pool.query(
+        `SELECT
+            a.id AS appointment_id,
+            a.patient_id,
+            p.name AS patient_name,
+            a.doctor_id,
+            d.name AS doctor_name,
+            dp.specialization,
+            a.slot_id,
+            TO_CHAR(da.availability_date, 'YYYY-MM-DD') AS appointment_date,
+            ds.start_time,
+            ds.end_time,
+            a.doctor_fee,
+            a.commission_fee,
+            a.total_fee,
+            a.status,
+            a.created_at
+        FROM public.appointments a
+        JOIN public.users p
+            ON p.id = a.patient_id
+        JOIN public.users d
+            ON d.id = a.doctor_id
+        LEFT JOIN public.doctor_profiles dp
+            ON dp.user_id = a.doctor_id
+        JOIN public.doctor_slots ds
+            ON ds.id = a.slot_id
+            AND ds.doctor_id = a.doctor_id
+        JOIN public.doctor_availability da
+            ON da.id = ds.availability_id
+            AND da.doctor_id = ds.doctor_id
+        ORDER BY da.availability_date DESC, ds.start_time DESC`
+    );
+
+    return result.rows.map((appointment) => ({
+        appointmentId: String(appointment.appointment_id),
+        patientId: String(appointment.patient_id),
+        patientName: appointment.patient_name,
+        doctorId: String(appointment.doctor_id),
+        doctorName: appointment.doctor_name,
+        specialization: appointment.specialization,
+        slotId: String(appointment.slot_id),
+        appointmentDate: appointment.appointment_date,
+        startTime: appointment.start_time,
+        endTime: appointment.end_time,
+        doctorFee: appointment.doctor_fee,
+        commissionFee: appointment.commission_fee,
+        totalFee: appointment.total_fee,
+        status: appointment.status,
+        bookedAt: appointment.created_at,
+    }));
+};

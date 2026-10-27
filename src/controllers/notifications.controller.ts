@@ -1,6 +1,6 @@
 
 import type { Request, Response } from "express";
-import { getUserNotifications, markNotificationAsRead } from "../services/notification.service.js";
+import { getAdminNotifications, getUserNotifications, markNotificationAsRead } from "../services/notification.service.js";
 
 export const getUserNotificationsController = async (
     req: Request,
@@ -58,6 +58,29 @@ export const markNotificationAsReadController = async (
 
         res.status(500).json({
             message: "Failed to update notification",
+        });
+    }
+};
+
+
+export const getAdminNotificationsController = async (
+    req: Request,
+    res: Response
+) => {
+    try {
+        const adminId = String(req.session.userId);
+
+        const notifications = await getAdminNotifications(adminId);
+
+        res.status(200).json({
+            message: "Admin notifications retrieved successfully",
+            data: notifications,
+        });
+    } catch (error) {
+        console.error("Get admin notifications error:", error);
+
+        res.status(500).json({
+            message: "Failed to retrieve admin notifications",
         });
     }
 };

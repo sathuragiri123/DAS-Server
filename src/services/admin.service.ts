@@ -121,7 +121,10 @@ export const reviewDoctorApplication = async (
 
         await client.query("COMMIT");
 
-        return updateResult.rows[0];
+        return {
+            ...updateResult.rows[0],
+            doctorId: String(doctorId),
+        };
     } catch (error) {
         await client.query("ROLLBACK");
         throw error;
@@ -272,5 +275,41 @@ export const getAdminDashboardStats = async () => {
         activeAppointments: Number(stats.active_appointments),
         completedAppointments: Number(stats.completed_appointments),
         cancelledAppointments: Number(stats.cancelled_appointments)
+    };
+};
+
+
+export const getAdminPatients = async () => {
+    const result = await pool.query(
+        `SELECT
+            id::text AS patient_id,
+            name,
+            email,
+            is_active,
+            created_at
+         FROM public.users
+         WHERE role = 'patient'
+         ORDER BY created_at DESC`
+    );
+
+    return result.rows;
+};
+
+export const getCommissionSettings = async () => {
+    const result = await pool.query(
+        `SELECT setting_value
+         FROM public.app_settings
+         WHERE setting_key = 'commission'`
+    );
+
+    if (result.rows.length === 0) {
+        throw new Error("Commission settings not found");
+    }
+
+    const setting = result.rows[0].setting_value;
+
+    return {
+        mode: setting.mode,
+        value: Number(setting.value),
     };
 };

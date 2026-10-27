@@ -100,3 +100,14 @@ export const registerDoctor = async (
         client.release();
     }
 };
+
+export const getAdminUserIds = async (): Promise<string[]> => {
+    const result = await pool.query(
+        `SELECT id::text
+         FROM public.users
+         WHERE role = 'admin'
+           AND is_active = TRUE`
+    );
+
+    return result.rows.map((row) => String(row.id));
+};
