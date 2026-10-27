@@ -26,9 +26,20 @@ if (!SESSION_SECRET) {
 
 const PgSession = connectPgSimple(session);
 
+const allowedOrigins = [
+    "http://localhost:5173",
+    "https://carepoint-cp.vercel.app",
+];
+
 app.use(
     cors({
-        origin: CLIENT_URL,
+        origin: (origin, callback) => {
+            if (!origin || allowedOrigins.includes(origin)) {
+                callback(null, true);
+            } else {
+                callback(new Error("Not allowed by CORS"));
+            }
+        },
         credentials: true,
     })
 );
