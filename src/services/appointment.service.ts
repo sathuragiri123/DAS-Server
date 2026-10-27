@@ -372,7 +372,7 @@ export const getPatientAppointments = async (patientId: string) => {
        a.slot_id,
        ds.start_time,
        ds.end_time,
-       da.availability_date,
+       TO_CHAR(da.availability_date, 'YYYY-MM-DD') AS availability_date,
        a.doctor_fee,
        a.commission_fee,
        a.total_fee,
