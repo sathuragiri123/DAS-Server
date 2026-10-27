@@ -18,6 +18,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 const PORT = Number(process.env.PORT) || 5000;
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
+
+const allowedOrigins = ["http://localhost:5173", "https://carepoint-cp.vercel.app",];
 const SESSION_SECRET = process.env.SESSION_SECRET;
 
 if (!SESSION_SECRET) {
@@ -25,11 +27,6 @@ if (!SESSION_SECRET) {
 }
 
 const PgSession = connectPgSimple(session);
-
-const allowedOrigins = [
-    "http://localhost:5173",
-    "https://carepoint-cp.vercel.app",
-];
 
 app.use(
     cors({
@@ -57,8 +54,8 @@ app.use(
         saveUninitialized: false,
         cookie: {
             httpOnly: true,
-            secure: true,
-            sameSite: "none",
+            secure: process.env.NODE_ENV === "production",
+            sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
             maxAge: 1000 * 60 * 60 * 24,
         },
     })
